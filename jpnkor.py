@@ -6,21 +6,57 @@ st.set_page_config(
     page_title="스마트 일본어 단어장", page_icon="🇯🇵", layout="centered"
 )
 
+# 세션 스테이트 초기화 (검색 기록 및 API 키 저장용)
+if "history" not in st.session_state:
+  st.session_state.history = []
+
+if "api_key" not in st.session_state:
+  st.session_state.api_key = ""
+
 st.title("🇯🇵 AI 스마트 일본어 학습 단어장")
 st.markdown(
     "한국어, 일본어, 혹은 **'츠쿠에'** 같은 한국식 발음으로 검색해도 완벽하게 찾아줍니다!"
 )
 
-# 사이드바 설정 (API 키 입력)
+# 1. Streamlit Secrets(비밀 설정)에서 API 키 자동 불러오기 (GEMINI_API_KEY 우선)
+api_key = ""
+try:
+  if "GEMINI_API_KEY" in st.secrets:
+    api_key = st.secrets["GEMINI_API_KEY"]
+  elif "GOOGLE_API_KEY" in st.secrets:
+    api_key = st.secrets["GOOGLE_API_KEY"]
+except Exception:
+  pass
+
+# 사이드바 설정
 with st.sidebar:
   st.header("⚙️ 설정")
-  api_key = st.text_input(
-      "Gemini API Key 입력",
-      type="password",
-      help="Google AI Studio에서 발급받은 API 키를 입력하세요.",
-  )
+
+  if api_key:
+    st.success("✅ 시크릿에서 API 키가 자동 로드되었습니다!")
+  else:
+    input_key = st.text_input(
+        "Gemini API Key 입력",
+        value=st.session_state.api_key,
+        type="password",
+        help="Google AI Studio에서 발급받은 API 키를 입력하세요.",
+    )
+    if input_key:
+      st.session_state.api_key = input_key
+      api_key = input_key
+
   st.markdown("---")
-  st.markdown("💡 **팁**: 한 번 입력하면 앱이 켜져 있는 동안 유지됩니다.")
+  st.header("📜 최근 검색 기록")
+
+  if st.session_state.history:
+    for item in reversed(st.session_state.history[-10:]):
+      st.markdown(f"- {item}")
+
+    if st.button("🗑️ 기록 초기화"):
+      st.session_state.history = []
+      st.rerun()
+  else:
+    st.info("아직 검색 기록이 없습니다.")
 
 # 검색 입력창
 query = st.text_input(
@@ -30,13 +66,21 @@ query = st.text_input(
 
 if st.button("🔍 검색하기", type="primary"):
   if not api_key:
-    st.warning("⚠️ 사이드바에 Gemini API Key를 먼저 입력해주세요!")
+    st.warning(
+        "⚠️ Streamlit Secrets에 API 키가 설정되어 있지 않거나 입력되지"
+        " 않았습니다!"
+    )
   elif not query.strip():
     st.warning("⚠️ 검색어를 입력해주세요!")
   else:
-    # API 설정
+    # 검색 기록 추가 (중복 방지 및 최신화)
+    if query in st.session_state.history:
+      st.session_state.history.remove(query)
+    st.session_state.history.append(query)
+
+    # API 설정 (gemini-3.5-flash-lite 적용)
     genai.configure(api_key=api_key)
-    model = genai.GenerativeModel("gemini-1.5-flash")
+    model = genai.GenerativeModel("gemini-3.5-flash-lite")
 
     # 프롬프트 작성
     prompt = f"""
