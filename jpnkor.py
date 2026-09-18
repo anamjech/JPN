@@ -60,7 +60,7 @@ if "current_result" not in st.session_state:
   st.session_state.current_result = ""
 
 
-# 공통 검색 실행 함수
+# 공통 검색 실행 함수 (기록 클릭 시 즉시 검색 지원)
 def perform_search(q):
   if not api_key:
     st.warning("⚠️ API 키가 설정되지 않았습니다!")
@@ -114,7 +114,7 @@ try:
 except Exception:
   pass
 
-# 사이드바 설정
+# 사이드바 설정 (기록 클릭 시 즉시 검색 실행)
 with st.sidebar:
   st.header("⚙️ 설정")
   if api_key:
@@ -188,9 +188,9 @@ if st.session_state.current_result:
       # [완벽하게 정돈된 오디오 추출 로직]
       # 1. [EX] 태그 제거
       clean_jp = re.sub(r"\[EX[123]\]", "", content)
-      # 2. 괄호나 슬래시, 대시 앞부분(한자 원문 영역)만 자르기
-      clean_jp = re.split(r"[\(\（\/\-]", clean_jp)[0]
-      # 3. 마크다운 기호(*, #, _, `, ~ 등)를 전부 빈 칸으로 치환하여 제거
+      # 2. 괄호, 슬래시, 대시 등 읽기나 뜻이 시작되는 기호 기준으로 무조건 뒷부분은 잘라내기 (오직 원문만 남김)
+      clean_jp = re.split(r"[\(\（\/\-\–\—\|\:]", clean_jp)[0]
+      # 3. 마크다운 기호(*, #, _, `, ~ 등) 제거
       clean_jp = re.sub(r"[\*\#\_\-\`\~]", "", clean_jp).strip()
 
       if clean_jp:
