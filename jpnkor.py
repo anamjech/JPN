@@ -128,6 +128,7 @@ if search_clicked and query:
     genai.configure(api_key=api_key)
     model = genai.GenerativeModel("gemini-3.5-flash-lite")
 
+    # 프롬프트 원상복구: 예전의 자연스러운 스타일을 유지하면서 [EX] 태그만 몰래 달도록 수정!
     prompt = f"""
     사용자가 일본어 학습을 위해 다음 단어를 검색했습니다: "{query}"
     이 단어가 한국어이든, 일본어(한자/히라가나/가타카나)이든, 한국식 발음/콩글리시(예: 츠쿠에)이든 상관없이 올바른 일본어 단어를 찾아 아래 양식에 맞추어 보기 좋은 마크다운 형식으로 상세히 설명해주세요.
@@ -139,11 +140,8 @@ if search_clicked and query:
     4. **한글 뜻**
     5. **훈독** (없으면 '없음')
     6. **음독** (없으면 '없음')
-    7. **실생활 예문 3개** (반드시 각 예문 앞에 [EX1], [EX2], [EX3] 태그를 붙여주고, 일본어 원문과 읽기, 한글 뜻을 포함해 주세요.)
-    형식 예시:
-    [EX1] 일본어문장 (히라가나 읽기) - 한글 뜻
-    [EX2] 일본어문장 (히라가나 읽기) - 한글 뜻
-    [EX3] 일본어문장 (히라가나 읽기) - 한글 뜻
+    7. **실생활 예문 3개** (간단하지만 자주 쓰는 문장으로 구성하되, [일본어 원문] / [히라가나 읽기] / [한글 뜻]을 각각 포함해 자연스럽고 보기 좋게 작성해 주세요. 
+    단, 시스템이 예문을 분리할 수 있도록 각 예문 시작 부분에만 [EX1], [EX2], [EX3] 태그를 달아주세요.)
 
     가독성이 좋고 깔끔한 마크다운 형식으로 출력해 주세요.
     """
@@ -160,7 +158,6 @@ if st.session_state.current_result:
   st.markdown("---")
   text = st.session_state.current_result
 
-  # 정규식을 유연하게 수정하여 AI가 마크다운 번호 매기기나 공백을 넣어도 [EX] 태그를 완벽히 찾아내도록 함
   ex_matches = re.findall(
       r"(?:###\s*)?\[EX([123])\]\s*(.*?)(?=(?:###\s*)?\[EX[123]\]|$)",
       text,
@@ -173,15 +170,16 @@ if st.session_state.current_result:
 
   # 예문별 개별 음성 플레이어 생성
   if ex_matches:
-    st.markdown("### 🔊 실생활 예문 및 개별 원어민 음성")
+    st.markdown("### 🔊 실생활 예문")
     for num, content in ex_matches:
       content = content.strip()
-      # 혹시 마크다운 불릿이나 번호 기호가 딸려오면 깔끔하게 정돈
-      content = re.sub(r"^[\*\-\d\.\)]+\s*", "", content)
-      st.markdown(f"**예문 {num}**: {content}")
+      
+      # 화면에는 AI가 써준 예쁘고 풍부한 자연스러운 마크다운 텍스트 그대로 출력!
+      st.markdown(content)
 
-      # 일본어 원문만 깔끔하게 추출하기 위해 괄호 전이나 대시 전까지만 슬라이싱
-      jp_part = re.split(r"[\(\-\—]", content)[0].strip()
+      # 음성으로 읽을 일본어 원문만 슬쩍 추출 ( 슬래시(/)나 괄호 앞부분 )
+      jp_part = re.split(r"[\/\(\-]", content)[0].strip()
+      jp_part = re.sub(r"^[\*\-\d\.\)]+\s*", "", jp_part) # 글머리 기호 제거
 
       if jp_part:
         try:
@@ -192,7 +190,8 @@ if st.session_state.current_result:
           st.audio(fp.read(), format="audio/mp3")
         except:
           pass
-      st.markdown("")
+      
+      # 예문 사이에 여백 추가
+      st.markdown("<br>", unsafe_allow_html=True)
   else:
-    # 혹시 태그 매칭에 실패하더라도 전체 결과는 깨지지 않도록 원문 그대로 출력
     st.markdown(text)
