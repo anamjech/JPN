@@ -16,7 +16,7 @@ st.markdown(
     """
     <style>
     .stButton button {
-        width: 100%
+        width: 100%;
         border-radius: 8px;
     }
     </style>
@@ -60,13 +60,12 @@ if "current_result" not in st.session_state:
   st.session_state.current_result = ""
 
 
-# 공통 검색 실행 함수 (버튼 클릭 및 기록 클릭 시 공용으로 사용)
+# 공통 검색 실행 함수
 def perform_search(q):
   if not api_key:
     st.warning("⚠️ API 키가 설정되지 않았습니다!")
     return
 
-  # 검색 기록 추가 및 파일 저장
   if q in st.session_state.history:
     st.session_state.history.remove(q)
   st.session_state.history.append(q)
@@ -115,7 +114,7 @@ try:
 except Exception:
   pass
 
-# 사이드바 설정 (기록 클릭 시 즉시 검색 실행되도록 연동)
+# 사이드바 설정
 with st.sidebar:
   st.header("⚙️ 설정")
   if api_key:
@@ -137,7 +136,7 @@ with st.sidebar:
     for item in reversed(st.session_state.history[-15:]):
       if st.button(f"🔍 {item}", key=f"hist_{item}"):
         st.session_state.current_query = item
-        perform_search(item)  # 클릭 즉시 검색 실행
+        perform_search(item)
         st.rerun()
 
     if st.button("🗑️ 검색 기록 비우기"):
@@ -186,15 +185,17 @@ if st.session_state.current_result:
       # 화면에는 AI가 작성한 자연스러운 마크다운 텍스트 전체 출력
       st.markdown(content)
 
-      # [수정된 부분] 태그와 마크다운 기호를 지운 뒤, 괄호나 대시(읽기/뜻 영역) 전까지의 '한자 원문 문장'만 추출
-      clean_content = re.sub(
-          r"^(\[EX[123]\]|\#{1,6}\s*|\*\*|\*)", "", content
-      ).strip()
-      jp_part = re.split(r"[\(\（\/\-]", clean_content)[0].strip()
+      # [완벽하게 정돈된 오디오 추출 로직]
+      # 1. [EX] 태그 제거
+      clean_jp = re.sub(r"\[EX[123]\]", "", content)
+      # 2. 괄호나 슬래시, 대시 앞부분(한자 원문 영역)만 자르기
+      clean_jp = re.split(r"[\(\（\/\-]", clean_jp)[0]
+      # 3. 마크다운 기호(*, #, _, `, ~ 등)를 전부 빈 칸으로 치환하여 제거
+      clean_jp = re.sub(r"[\*\#\_\-\`\~]", "", clean_jp).strip()
 
-      if jp_part:
+      if clean_jp:
         try:
-          tts = gTTS(text=jp_part, lang="ja")
+          tts = gTTS(text=clean_jp, lang="ja")
           fp = io.BytesIO()
           tts.write_to_fp(fp)
           fp.seek(0)
