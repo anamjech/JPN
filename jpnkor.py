@@ -1,3 +1,4 @@
+import io
 import json
 import os
 import re
@@ -23,7 +24,7 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-# 검색 기록을 파일로 저장하여 껐다 켜도 유지되도록 처리
+# 검색 기록을 파일로 저장
 HISTORY_FILE = "search_history.json"
 
 
@@ -63,7 +64,7 @@ st.markdown(
     "검색하고, 예문마다 **개별 원어민 음성**으로 발음을 확인해 보세요!"
 )
 
-# 1. Streamlit Secrets(비밀 설정)에서 API 키 자동 불러오기
+# Streamlit Secrets에서 API 키 자동 불러오기
 api_key = ""
 try:
   if "GEMINI_API_KEY" in st.secrets:
@@ -73,7 +74,7 @@ try:
 except Exception:
   pass
 
-# 사이드바 설정 (최근 검색 기록만 깔끔하게 유지)
+# 사이드바 설정
 with st.sidebar:
   st.header("⚙️ 설정")
   if api_key:
@@ -92,7 +93,6 @@ with st.sidebar:
   st.header("📜 최근 검색 기록")
 
   if st.session_state.history:
-    # 최근 검색어가 위로 오도록 출력 (최대 15개)
     for item in reversed(st.session_state.history[-15:]):
       if st.button(f"🔍 {item}", key=f"hist_{item}"):
         st.session_state.current_query = item
@@ -120,13 +120,11 @@ if search_clicked and query:
   if not api_key:
     st.warning("⚠️ API 키가 설정되지 않았습니다!")
   else:
-    # 검색 기록 추가 및 파일 저장 (껐다 켜도 유지)
     if query in st.session_state.history:
       st.session_state.history.remove(query)
     st.session_state.history.append(query)
     save_history(st.session_state.history)
 
-    # API 설정 (gemini-3.5-flash-lite)
     genai.configure(api_key=api_key)
     model = genai.GenerativeModel("gemini-3.5-flash-lite")
 
@@ -160,14 +158,17 @@ if search_clicked and query:
 # 결과 출력 및 예문별 개별 음성 플레이어 배치
 if st.session_state.current_result:
   st.markdown("---")
-
   text = st.session_state.current_result
 
-  # [EX1], [EX2], [EX3] 태그를 기준으로 결과 분리
-  ex_matches = re.findall(r"\[EX([123])\]\s*(.*?)(?=\[EX[123]\]|$)", text, re.DOTALL)
+  # 정규식을 유연하게 수정하여 AI가 마크다운 번호 매기기나 공백을 넣어도 [EX] 태그를 완벽히 찾아내도록 함
+  ex_matches = re.findall(
+      r"(?:###\s*)?\[EX([123])\]\s*(.*?)(?=(?:###\s*)?\[EX[123]\]|$)",
+      text,
+      re.DOTALL | re.IGNORECASE,
+  )
 
-  # 단어 기본 정보 출력 (예문 태그 전까지의 내용)
-  base_info = re.split(r"\[EX1\]", text)[0]
+  # 단어 기본 정보 출력 ([EX1] 등장 전까지의 내용)
+  base_info = re.split(r"\[EX1\]", text, flags=re.IGNORECASE)[0]
   st.markdown(base_info)
 
   # 예문별 개별 음성 플레이어 생성
@@ -175,19 +176,23 @@ if st.session_state.current_result:
     st.markdown("### 🔊 실생활 예문 및 개별 원어민 음성")
     for num, content in ex_matches:
       content = content.strip()
+      # 혹시 마크다운 불릿이나 번호 기호가 딸려오면 깔끔하게 정돈
+      content = re.sub(r"^[\*\-\d\.\)]+\s*", "", content)
       st.markdown(f"**예문 {num}**: {content}")
 
-      # 일본어 문장만 추출 (첫 번째 괄호나 기호 전까지)
-      jp_part = content.split("(")[0].split("-")[0].strip()
+      # 일본어 원문만 깔끔하게 추출하기 위해 괄호 전이나 대시 전까지만 슬라이싱
+      jp_part = re.split(r"[\(\-\—]", content)[0].strip()
 
-      try:
-        tts = gTTS(text=jp_part, lang="ja")
-        fp = io.BytesIO()
-        tts.write_to_fp(fp)
-        fp.seek(0)
-        st.audio(fp.read(), format="audio/mp3")
-      except:
-        pass
+      if jp_part:
+        try:
+          tts = gTTS(text=jp_part, lang="ja")
+          fp = io.BytesIO()
+          tts.write_to_fp(fp)
+          fp.seek(0)
+          st.audio(fp.read(), format="audio/mp3")
+        except:
+          pass
       st.markdown("")
   else:
+    # 혹시 태그 매칭에 실패하더라도 전체 결과는 깨지지 않도록 원문 그대로 출력
     st.markdown(text)
