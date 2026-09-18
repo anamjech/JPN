@@ -128,7 +128,6 @@ if search_clicked and query:
     genai.configure(api_key=api_key)
     model = genai.GenerativeModel("gemini-3.5-flash-lite")
 
-    # 프롬프트 원상복구: 예전의 자연스러운 스타일을 유지하면서 [EX] 태그만 몰래 달도록 수정!
     prompt = f"""
     사용자가 일본어 학습을 위해 다음 단어를 검색했습니다: "{query}"
     이 단어가 한국어이든, 일본어(한자/히라가나/가타카나)이든, 한국식 발음/콩글리시(예: 츠쿠에)이든 상관없이 올바른 일본어 단어를 찾아 아래 양식에 맞추어 보기 좋은 마크다운 형식으로 상세히 설명해주세요.
@@ -173,13 +172,16 @@ if st.session_state.current_result:
     st.markdown("### 🔊 실생활 예문")
     for num, content in ex_matches:
       content = content.strip()
-      
-      # 화면에는 AI가 써준 예쁘고 풍부한 자연스러운 마크다운 텍스트 그대로 출력!
+
+      # 화면에는 AI가 작성한 자연스러운 마크다운 텍스트 그대로 출력
       st.markdown(content)
 
-      # 음성으로 읽을 일본어 원문만 슬쩍 추출 ( 슬래시(/)나 괄호 앞부분 )
-      jp_part = re.split(r"[\/\(\-]", content)[0].strip()
-      jp_part = re.sub(r"^[\*\-\d\.\)]+\s*", "", jp_part) # 글머리 기호 제거
+      # [수정된 핵심 부분] 유니코드를 활용해 오직 순수 일본어(히라가나, 가타카나, 한자, 장음)만 추출
+      # 이렇게 하면 마크다운 기호나 태그, 한글, 숫자가 절대 음성으로 들어가지 않습니다.
+      jp_chars = re.findall(
+          r"[\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FAF\u30FC\u3005]+", content
+      )
+      jp_part = " ".join(jp_chars).strip()
 
       if jp_part:
         try:
@@ -190,8 +192,7 @@ if st.session_state.current_result:
           st.audio(fp.read(), format="audio/mp3")
         except:
           pass
-      
-      # 예문 사이에 여백 추가
+
       st.markdown("<br>", unsafe_allow_html=True)
   else:
     st.markdown(text)
