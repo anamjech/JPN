@@ -57,7 +57,7 @@ if "current_query" not in st.session_state:
   st.session_state.current_query = ""
 
 if "current_result" not in st.session_state:
-  st.session_state.current_result = ""
+  st.session_state.current_result = None  # JSON 데이터를 저장하기 위해 None으로 초기화
 
 
 # 공통 검색 실행 함수 (기록 클릭 시 즉시 검색 지원)
@@ -74,44 +74,53 @@ def perform_search(q):
   genai.configure(api_key=api_key)
   model = genai.GenerativeModel("gemini-3.5-flash-lite")
 
+  # JSON 형식으로 답변을 강제하여 데이터 꼬임 현상 원천 차단
   prompt = f"""
     사용자가 일본어 학습을 위해 다음 단어를 검색했습니다: "{q}"
-    올바른 일본어 단어를 찾아 아래 양식에 맞추어 마크다운 형식으로 **정확히 한 번만** 상세히 설명해주세요. 
-    절대 내용을 반복해서 출력하지 마세요.
+    올바른 일본어 단어 정보를 찾아 반드시 아래의 JSON 형식으로만 응답해주세요. 
+    다른 설명이나 마크다운 코드 블록 이외의 텍스트는 출력하지 마세요.
 
-    반드시 다음 항목들을 명확히 구분해서 출력해 주세요:
-    1. **단어 기본 정보** (일본어 표기 및 대표 형태)
-    2. **한자** (한자가 없는 단어면 '없음' 표시)
-    3. **히라가나**
-    4. **한글 뜻**
-    5. **훈독** (없으면 '없음')
-    6. **음독** (없으면 '없음')
-    7. **실생활 예문 3개** (반드시 아래 형식을 정확히 지켜주세요. [일본어 원문]에는 **절대로 한글을 쓰지 말고 순수 일본어(한자/가나)**만 작성하고, [히라가나 읽기]는 **오직 히라가나**로만 작성하세요.)
-
-    [EX1]
-    - **[일본어 원문]**: (순수 일본어 문장만 작성, 한글 금지)
-    - **[히라가나 읽기]**: (오직 히라가나로만 작성)
-    - **[한글 뜻]**: (한국어 번역)
-
-    [EX2]
-    - **[일본어 원문]**: (순수 일본어 문장만 작성, 한글 금지)
-    - **[히라가나 읽기]**: (오직 히라가나로만 작성)
-    - **[한글 뜻]**: (한국어 번역)
-
-    [EX3]
-    - **[일본어 원문]**: (순수 일본어 문장만 작성, 한글 금지)
-    - **[히라가나 읽기]**: (오직 히라가나로만 작성)
-    - **[한글 뜻]**: (한국어 번역)
-
-    가독성이 좋고 깔끔한 마크다운 형식으로 출력해 주세요.
+    {{
+      "word_info": "단어 기본 정보 (일본어 표기 및 대표 형태)",
+      "kanji": "한자 (한자가 없으면 '없음')",
+      "hiragana": "히라가나",
+      "meaning": "한글 뜻",
+      "kunyomi": "훈독 (없으면 '없음')",
+      "onyomi": "음독 (없으면 '없음')",
+      "examples": [
+        {{
+          "original": "순수 일본어 원문 문장 (절대로 한글을 섞지 말고 일본어만 작성)",
+          "reading": "오직 히라가나로만 작성된 읽기",
+          "meaning": "한글 뜻 번역"
+        }},
+        {{
+          "original": "순수 일본어 원문 문장 (절대로 한글을 섞지 말고 일본어만 작성)",
+          "reading": "오직 히라가나로만 작성된 읽기",
+          "meaning": "한글 뜻 번역"
+        }},
+        {{
+          "original": "순수 일본어 원문 문장 (절대로 한글을 섞지 말고 일본어만 작성)",
+          "reading": "오직 히라가나로만 작성된 읽기",
+          "meaning": "한글 뜻 번역"
+        }}
+      ]
+    }}
     """
 
-  with st.spinner("✨ AI가 단어를 분석하고 예문을 만드는 중..."):
+  with st.spinner("✨ AI가 단어를 분석하고 정돈된 예문을 만드는 중..."):
     try:
       response = model.generate_content(prompt)
-      st.session_state.current_result = response.text
+      raw_text = response.text.strip()
+
+      # JSON 형식 외의 불필요한 마크다운 기호 제거
+      cleaned_json = re.sub(
+          r"^```json\s*|\s*```$", "", raw_text, flags=re.MULTILINE
+      ).strip()
+      data = json.loads(cleaned_json)
+      st.session_state.current_result = data
     except Exception as e:
-      st.error(f"오류가 발생했습니다: {e}")
+      st.error(f"데이터 처리 중 오류가 발생했습니다: {e}")
+      st.session_state.current_result = None
 
 
 st.title("🇯🇵 AI 스마트 일본어 단어장")
@@ -174,62 +183,43 @@ if search_clicked and query:
   perform_search(query)
   st.rerun()
 
-# 결과 출력 및 예문별 개별 음성 플레이어 배치
+# 결과 출력 (JSON 데이터를 안전하게 화면에 렌더링)
 if st.session_state.current_result:
   st.markdown("---")
-  text = st.session_state.current_result
+  data = st.session_state.current_result
 
-  ex_matches = re.findall(
-      r"(?:###\s*)?\[EX([123])\]\s*(.*?)(?=(?:###\s*)?\[EX[123]\]|$)",
-      text,
-      re.DOTALL | re.IGNORECASE,
-  )
+  # 1. 단어 기본 정보 출력
+  st.markdown(f"### 📌 단어 기본 정보")
+  st.markdown(f"- **단어**: {data.get('word_info', '')}")
+  st.markdown(f"- **한자**: {data.get('kanji', '')}")
+  st.markdown(f"- **히라가나**: {data.get('hiragana', '')}")
+  st.markdown(f"- **한글 뜻**: {data.get('meaning', '')}")
+  st.markdown(f"- **훈독**: {data.get('kunyomi', '')}")
+  st.markdown(f"- **음독**: {data.get('onyomi', '')}")
 
-  # 단어 기본 정보 출력 ([EX1] 등장 전까지의 내용)
-  base_info = re.split(r"\[EX1\]", text, flags=re.IGNORECASE)[0]
-  st.markdown(base_info)
-
-  # 예문별 개별 음성 플레이어 생성 (중복 출력 방지 및 안전한 원문 추출)
-  if ex_matches:
+  # 2. 실생활 예문 출력 및 오디오 플레이어 배치
+  examples = data.get("examples", [])
+  if examples:
     st.markdown("### 🔊 실생활 예문")
-    seen_exs = set()  # 모델이 답변을 반복 출력하는 경우 중복 방지용 세트
+    for idx, ex in enumerate(examples, 1):
+      orig = ex.get("original", "").strip()
+      read = ex.get("reading", "").strip()
+      mean = ex.get("meaning", "").strip()
 
-    for num, content in ex_matches:
-      if num in seen_exs:
-        continue
-      seen_exs.add(num)
+      # 요청하신 정확한 양식으로 마크다운 출력
+      st.markdown(f"- **[일본어 원문]**: {orig}")
+      st.markdown(f"- **[히라가나 읽기]**: {read}")
+      st.markdown(f"- **[한글 뜻]**: {mean}")
 
-      content = content.strip()
-
-      # 화면에는 AI가 작성한 자연스러운 마크다운 텍스트 전체 출력
-      st.markdown(content)
-
-      # [일본어 원문] 줄에서 순수 일본어 원문만 정밀 추출
-      clean_jp = ""
-      for line in content.split("\n"):
-        if "원문" in line:
-          text_part = re.sub(
-              r".*?(\[일본어 원문\]|일본어 원문|원문)\s*[:]?\s*", "", line
-          )
-          clean_jp = re.sub(r"[\*\#\_\-\`\~]", "", text_part).strip()
-          break
-
-      # 이중 안전장치: 혹시라도 한글이 섞였다면 오직 일본어 문자(한자, 히라가나, 가타카나)만 골라냄
-      jp_chars = re.findall(
-          r"[\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FAF\u30FC\u3005\s]+", clean_jp
-      )
-      clean_jp = "".join(jp_chars).strip()
-
-      if clean_jp:
+      # 오직 [일본어 원문]에 해당하는 내용만 음성으로 변환하여 재생
+      if orig:
         try:
-          tts = gTTS(text=clean_jp, lang="ja")
+          tts = gTTS(text=orig, lang="ja")
           fp = io.BytesIO()
           tts.write_to_fp(fp)
           fp.seek(0)
           st.audio(fp.read(), format="audio/mp3")
-        except:
+        except Exception:
           pass
 
       st.markdown("<br>", unsafe_allow_html=True)
-  else:
-    st.markdown(text)
